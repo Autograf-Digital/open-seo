@@ -319,8 +319,13 @@ export default Alchemy.Stack(
     // Auth needs an absolute BETTER_AUTH_URL. Prod sets it explicitly;
     // previews always derive it from the deterministic worker name — a wrong
     // WORKERS_SUBDOMAIN surfaces in CI's post-deploy Access verify step.
+    // Self-host on our own hostname (Autograf): serve the app on it, derive the
+    // auth URL from it, and keep the workers.dev address off.
+    const selfhostDomain = prod ? "" : yield* optionalVar("OPENSEO_SELFHOST_DOMAIN");
     let authUrl: string;
-    if (prod) {
+    if (selfhostDomain) {
+      authUrl = `https://${selfhostDomain}`;
+    } else if (prod) {
       authUrl = yield* optionalVar("BETTER_AUTH_URL");
       if (!authUrl) {
         return yield* Effect.die(
@@ -423,7 +428,8 @@ export default Alchemy.Stack(
     const app = yield* Cloudflare.Worker("open-seo", {
       name: workerName(stage),
       // Prod serves the real domains; the zone is inferred from the hostname.
-      domain: prod ? ["app.openseo.so", "www.app.openseo.so"] : undefined,
+      domain: prod ? ["app.openseo.so", "www.app.openseo.so"] : selfhostDomain ? [selfhostDomain] : undefined,
+      ...(selfhostDomain ? { url: false } : {}),
       // Prebuilt worker from `vite build` (@cloudflare/vite-plugin). The entry
       // exports the DO + WorkflowEntrypoint classes (re-exported by
       // src/server.ts), which `bundle: false` requires. Sibling chunks under
