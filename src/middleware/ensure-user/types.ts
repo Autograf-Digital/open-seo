@@ -18,4 +18,7 @@ export type EnsuredUserContext = {
   // org and no member rows, so they resolve as "owner".
   role: string;
   project?: EnsuredProject;
+  // A Cloudflare Access service token listed in ACCESS_READONLY_SERVICE_TOKENS.
+  // Only the MCP transport admits it, and only with the read tools.
+  readOnlyServiceToken?: true;
 };

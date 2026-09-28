@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { AppError } from "@/server/lib/errors";
 import { validateTeamDomain } from "@/shared/selfhost-checks";
 import { classifyAccessVerificationError } from "./accessTokenErrors";
+import { SHARED_WORKSPACE_ORGANIZATION_ID } from "@/server/auth/delegated-organization";
 import { resolveSharedWorkspaceContext } from "./delegated";
 import type { EnsuredUserContext } from "./types";
 
@@ -36,8 +37,45 @@ function getValidatedTeamDomain(teamDomain: string) {
   return result.origin;
 }
 
+// Access service tokens that may read the shared workspace over MCP. A service
+// token's JWT carries its client id as `common_name` and has no email, so it
+// is never a person: it gets a synthetic identity, the shared workspace, and
+// (in transport.ts) only the read tools. Comma-separated client ids, e.g.
+// "abc123.access". Unset means no service token is accepted.
+function readOnlyServiceTokenIds() {
+  return new Set(
+    (env.ACCESS_READONLY_SERVICE_TOKENS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
+function resolveReadOnlyServiceTokenContext(
+  payload: JWTPayload,
+): EnsuredUserContext | null {
+  const commonName =
+    typeof payload.common_name === "string" ? payload.common_name : null;
+  if (!commonName || typeof payload.email === "string") return null;
+  if (!readOnlyServiceTokenIds().has(commonName)) return null;
+
+  return {
+    userId: `access-service-token:${commonName}`,
+    userEmail: commonName,
+    emailVerified: true,
+    // Not ensureSharedWorkspaceOrganization(): a read-only identity must not
+    // write, and when the workspace does not exist there is nothing to read.
+    organizationId: SHARED_WORKSPACE_ORGANIZATION_ID,
+    role: "member",
+    readOnlyServiceToken: true,
+  };
+}
+
+// `allowReadOnlyServiceToken` is set only by the MCP transport. Server
+// functions and API routes keep rejecting service tokens.
 export async function resolveCloudflareAccessContext(
   headers: Headers,
+  options: { allowReadOnlyServiceToken?: boolean } = {},
 ): Promise<EnsuredUserContext> {
   const teamDomain = env.TEAM_DOMAIN
     ? getValidatedTeamDomain(env.TEAM_DOMAIN)
@@ -91,6 +129,10 @@ export async function resolveCloudflareAccessContext(
   const userEmail = typeof payload.email === "string" ? payload.email : null;
 
   if (!userId || !userEmail) {
+    const service = options.allowReadOnlyServiceToken
+      ? resolveReadOnlyServiceTokenContext(payload)
+      : null;
+    if (service) return service;
     throw new AppError("UNAUTHENTICATED");
   }
 

@@ -25,6 +25,9 @@ declare namespace Cloudflare {
     BYPASS_EMAIL_VERIFICATION?: string;
     TEAM_DOMAIN?: string;
     POLICY_AUD?: string;
+    // Comma-separated Cloudflare Access service-token client ids admitted to
+    // /mcp with read-only tools (cloudflare_access mode only).
+    ACCESS_READONLY_SERVICE_TOKENS?: string;
     POSTHOG_PUBLIC_KEY?: string;
     POSTHOG_HOST?: string;
     BETTER_AUTH_SECRET?: string;

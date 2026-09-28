@@ -293,6 +293,9 @@ const dataEnv = {
   // Alchemy reconciles worker vars on every deploy, so the telemetry opt-out
   // must live in the env file — a dashboard-set var would be wiped.
   OPENSEO_TELEMETRY_DISABLED: optionalVar("OPENSEO_TELEMETRY_DISABLED"),
+  // Cloudflare Access service-token client ids admitted to /mcp with the
+  // read-only tools (src/middleware/ensure-user/cloudflareAccess.ts).
+  ACCESS_READONLY_SERVICE_TOKENS: optionalVar("ACCESS_READONLY_SERVICE_TOKENS"),
 };
 
 export default Alchemy.Stack(
@@ -321,7 +324,9 @@ export default Alchemy.Stack(
     // WORKERS_SUBDOMAIN surfaces in CI's post-deploy Access verify step.
     // Self-host on our own hostname (Autograf): serve the app on it, derive the
     // auth URL from it, and keep the workers.dev address off.
-    const selfhostDomain = prod ? "" : yield* optionalVar("OPENSEO_SELFHOST_DOMAIN");
+    const selfhostDomain = prod
+      ? ""
+      : yield* optionalVar("OPENSEO_SELFHOST_DOMAIN");
     let authUrl: string;
     if (selfhostDomain) {
       authUrl = `https://${selfhostDomain}`;
@@ -428,7 +433,11 @@ export default Alchemy.Stack(
     const app = yield* Cloudflare.Worker("open-seo", {
       name: workerName(stage),
       // Prod serves the real domains; the zone is inferred from the hostname.
-      domain: prod ? ["app.openseo.so", "www.app.openseo.so"] : selfhostDomain ? [selfhostDomain] : undefined,
+      domain: prod
+        ? ["app.openseo.so", "www.app.openseo.so"]
+        : selfhostDomain
+          ? [selfhostDomain]
+          : undefined,
       ...(selfhostDomain ? { url: false } : {}),
       // Prebuilt worker from `vite build` (@cloudflare/vite-plugin). The entry
       // exports the DO + WorkflowEntrypoint classes (re-exported by

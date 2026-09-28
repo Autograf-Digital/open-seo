@@ -42,6 +42,7 @@ import {
   updateProjectContextTool,
 } from "@/server/mcp/tools/project-context";
 import { listSavedKeywordsTool } from "@/server/mcp/tools/list-saved-keywords";
+import { getProjectOverviewTool } from "@/server/mcp/tools/get-project-overview";
 import {
   findSerpCompetitorsTool,
   getGoogleBusinessQuestionsTool,
@@ -135,7 +136,28 @@ function registerOpenSeoTool<Input extends ToolSchema>(
   );
 }
 
-export function createOpenSeoMcpServer(authProps: McpProps) {
+// The only tools a read-only identity (a Cloudflare Access service token) is
+// given: each reads OpenSEO's own database and never calls DataForSEO or any
+// other paid or external provider, and none writes. get_audit_status is
+// excluded because it can reconcile a dead audit by marking it failed.
+export const READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "list_projects",
+  "get_project_context",
+  "get_project_overview",
+  "list_saved_keywords",
+  "get_rank_tracker",
+  "get_audit_issues",
+  "get_audit_pages",
+  "list_reports",
+  "get_report",
+]);
+
+export type OpenSeoMcpServerOptions = { readOnly?: boolean };
+
+export function createOpenSeoMcpServer(
+  authProps: McpProps,
+  options: OpenSeoMcpServerOptions = {},
+) {
   const server = new McpServer(
     {
       name: "OpenSEO MCP",
@@ -165,12 +187,16 @@ export function createOpenSeoMcpServer(authProps: McpProps) {
 
   const register = <Input extends ToolSchema>(
     tool: OpenSeoToolDefinition<Input>,
-  ) => registerOpenSeoTool(server, tool, authProps);
+  ) => {
+    if (options.readOnly && !READ_ONLY_TOOL_NAMES.has(tool.name)) return;
+    registerOpenSeoTool(server, tool, authProps);
+  };
 
   register(whoamiTool);
   register(listProjectsTool);
   register(createProjectTool);
   register(getProjectContextTool);
+  register(getProjectOverviewTool);
   register(updateProjectContextTool);
   register(listSavedKeywordsTool);
   register(researchKeywordsTool);

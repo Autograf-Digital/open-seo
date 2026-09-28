@@ -189,7 +189,9 @@ describe("handleSelfHostedOpenSeoMcpRequest", () => {
     expect(response.status).toBe(200);
     expect(
       selfHostedAuthMocks.resolveCloudflareAccessContext,
-    ).toHaveBeenCalledWith(expect.any(Headers));
+    ).toHaveBeenCalledWith(expect.any(Headers), {
+      allowReadOnlyServiceToken: true,
+    });
     expect(selfHostedAuthMocks.createOpenSeoMcpServer).toHaveBeenCalledWith({
       [MCP_AUTH_CONTEXT_PROP]: {
         userId: "cloudflare-user",

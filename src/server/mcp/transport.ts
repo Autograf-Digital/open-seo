@@ -19,7 +19,10 @@ import {
   type McpProps,
 } from "@/server/mcp/context";
 import { getPublicOrigin } from "@/server/mcp/public-origin";
-import { createOpenSeoMcpServer } from "@/server/mcp/server";
+import {
+  createOpenSeoMcpServer,
+  type OpenSeoMcpServerOptions,
+} from "@/server/mcp/server";
 import { AuthRepository } from "@/server/auth/repositories/AuthRepository";
 import { resolveExistingActiveHostedOrganization } from "@/server/auth/default-hosted-organization";
 
@@ -77,7 +80,11 @@ function validateLegacyRequest(
   return originRejection ? withMcpCors(originRejection) : undefined;
 }
 
-async function handleLegacyJsonRequest(request: Request, props: McpProps) {
+async function handleLegacyJsonRequest(
+  request: Request,
+  props: McpProps,
+  serverOptions?: OpenSeoMcpServerOptions,
+) {
   if (request.method !== "POST") {
     return withMcpCors(
       Response.json(
@@ -99,7 +106,7 @@ async function handleLegacyJsonRequest(request: Request, props: McpProps) {
   // before the request completes. JSON mode silently drops server-to-client
   // requests (sampling/elicitation) and would hang the buffered response —
   // no OpenSEO tool issues them.
-  const server = createOpenSeoMcpServer(props);
+  const server = createOpenSeoMcpServer(props, serverOptions);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -125,18 +132,22 @@ async function handleLegacyJsonRequest(request: Request, props: McpProps) {
 function createRequestHandler(
   props: McpProps,
   allowedOriginHostnames?: string[],
+  serverOptions?: OpenSeoMcpServerOptions,
 ) {
-  const modernHandler = createMcpHandler(() => createOpenSeoMcpServer(props), {
-    route: MCP_ROUTE,
-    allowedOriginHostnames,
-    legacy: "reject",
-    // MCP serving is strictly stateless: no notification is ever published,
-    // so refuse subscriptions/listen outright (in-band -32603 before the
-    // ack). The SSE streams it would otherwise hold open pin isolates for
-    // hours and turn every isolate death into a burst of exceededMemory
-    // request outcomes (EVE-95).
-    maxSubscriptions: 0,
-  });
+  const modernHandler = createMcpHandler(
+    () => createOpenSeoMcpServer(props, serverOptions),
+    {
+      route: MCP_ROUTE,
+      allowedOriginHostnames,
+      legacy: "reject",
+      // MCP serving is strictly stateless: no notification is ever published,
+      // so refuse subscriptions/listen outright (in-band -32603 before the
+      // ack). The SSE streams it would otherwise hold open pin isolates for
+      // hours and turn every isolate death into a burst of exceededMemory
+      // request outcomes (EVE-95).
+      maxSubscriptions: 0,
+    },
+  );
 
   return async (request: Request, env: unknown, ctx: ExecutionContext) => {
     if (request.method === "OPTIONS") {
@@ -150,7 +161,7 @@ function createRequestHandler(
     }
 
     const rejection = validateLegacyRequest(request, allowedOriginHostnames);
-    return rejection ?? handleLegacyJsonRequest(request, props);
+    return rejection ?? handleLegacyJsonRequest(request, props, serverOptions);
   };
 }
 
@@ -245,14 +256,21 @@ export async function handleSelfHostedOpenSeoMcpRequest(
   const identity =
     authMode === "local_noauth"
       ? await resolveLocalNoAuthContext()
-      : await resolveCloudflareAccessContext(request.headers);
+      : await resolveCloudflareAccessContext(request.headers, {
+          allowReadOnlyServiceToken: true,
+        });
   const props = createWorkersOAuthMcpProps({
     userId: identity.userId,
     userEmail: identity.userEmail,
     organizationId: identity.organizationId,
+    ...(identity.readOnlyServiceToken ? { role: identity.role } : {}),
     baseUrl: getPublicOrigin(request),
     userAgent: request.headers.get("user-agent") ?? undefined,
   });
 
-  return createRequestHandler(props)(request, env, ctx);
+  return createRequestHandler(
+    props,
+    undefined,
+    identity.readOnlyServiceToken ? { readOnly: true } : undefined,
+  )(request, env, ctx);
 }
