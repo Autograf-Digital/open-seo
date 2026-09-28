@@ -15,6 +15,7 @@ import {
   requireAllowedEmails,
   workerName,
 } from "./alchemy.access.ts";
+import { deployedSource } from "./scripts/deployed-source.ts";
 
 // Preview hostnames are `open-seo-<stage>.<WORKERS_SUBDOMAIN>` — the naming
 // lives in alchemy.access.ts, shared with the Access wildcard the security
@@ -365,6 +366,10 @@ export default Alchemy.Stack(
       authUrl = "";
     }
 
+    // Autograf: both workers carry the commit this deploy was built from, so
+    // the running version is verifiable from the live Worker bindings.
+    const OPENSEO_DEPLOYED_COMMIT = deployedSource();
+
     const access = yield* resolveSelfHostAccess(
       stage,
       authMode === "cloudflare_access" && !prod,
@@ -416,6 +421,7 @@ export default Alchemy.Stack(
         POSTHOG_HOST: dataEnv.POSTHOG_HOST,
         AUTH_MODE: authMode,
         DATABASE_PROVIDER: databaseProvider || "d1",
+        OPENSEO_DEPLOYED_COMMIT,
         ...(prodHyperdrive ? { HYPERDRIVE: prodHyperdrive } : {}),
         // This worker is the code home of the scratchpad DO and the
         // site-audit workflow; the app worker binds to both cross-script.
@@ -475,6 +481,7 @@ export default Alchemy.Stack(
       env: {
         ...resources,
         ...dataEnv,
+        OPENSEO_DEPLOYED_COMMIT,
         AUTH_MODE: authMode,
         DATABASE_PROVIDER: databaseProvider || "d1",
         BETTER_AUTH_URL: authUrl,
