@@ -21,4 +21,8 @@ export type EnsuredUserContext = {
   // A Cloudflare Access service token listed in ACCESS_READONLY_SERVICE_TOKENS.
   // Only the MCP transport admits it, and only with the read tools.
   readOnlyServiceToken?: true;
+  // A Cloudflare Access service token listed in ACCESS_ACTION_SERVICE_TOKENS.
+  // Only the MCP transport admits it, with the read tools plus the
+  // ACTION_TOOL_NAMES allowlist (src/server/mcp/server.ts).
+  actionServiceToken?: true;
 };

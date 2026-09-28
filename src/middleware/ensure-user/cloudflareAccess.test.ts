@@ -21,6 +21,7 @@ vi.mock("./delegated", () => ({
 }));
 
 const SERVICE_TOKEN = "efd3f67bba64d342278a0371011aa0ae.access";
+const ACTION_TOKEN = "0123456789abcdef0123456789abcdef.access";
 
 function accessHeaders() {
   return new Headers({ "cf-access-jwt-assertion": "signed.jwt.value" });
@@ -37,6 +38,7 @@ describe("resolveCloudflareAccessContext", () => {
     mocks.env.TEAM_DOMAIN = "https://team.cloudflareaccess.com";
     mocks.env.POLICY_AUD = "aud-tag";
     mocks.env.ACCESS_READONLY_SERVICE_TOKENS = ` other.access , ${SERVICE_TOKEN}`;
+    mocks.env.ACCESS_ACTION_SERVICE_TOKENS = undefined;
     mocks.resolveSharedWorkspaceContext.mockImplementation(
       (userId: string, userEmail: string) =>
         Promise.resolve({
@@ -53,7 +55,7 @@ describe("resolveCloudflareAccessContext", () => {
     mocks.jwtVerify.mockResolvedValue(servicePayload());
 
     const context = await resolveCloudflareAccessContext(accessHeaders(), {
-      allowReadOnlyServiceToken: true,
+      allowServiceToken: true,
     });
 
     expect(context).toEqual({
@@ -74,7 +76,7 @@ describe("resolveCloudflareAccessContext", () => {
     mocks.jwtVerify.mockResolvedValue(servicePayload());
 
     const context = await resolveCloudflareAccessContext(accessHeaders(), {
-      allowReadOnlyServiceToken: true,
+      allowServiceToken: true,
     });
 
     expect(context.readOnlyServiceToken).toBe(true);
@@ -93,7 +95,7 @@ describe("resolveCloudflareAccessContext", () => {
 
     await expect(
       resolveCloudflareAccessContext(accessHeaders(), {
-        allowReadOnlyServiceToken: true,
+        allowServiceToken: true,
       }),
     ).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
   });
@@ -104,7 +106,7 @@ describe("resolveCloudflareAccessContext", () => {
 
     await expect(
       resolveCloudflareAccessContext(accessHeaders(), {
-        allowReadOnlyServiceToken: true,
+        allowServiceToken: true,
       }),
     ).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
   });
@@ -115,7 +117,7 @@ describe("resolveCloudflareAccessContext", () => {
     });
 
     const context = await resolveCloudflareAccessContext(accessHeaders(), {
-      allowReadOnlyServiceToken: true,
+      allowServiceToken: true,
     });
 
     expect(context.readOnlyServiceToken).toBeUndefined();
@@ -124,5 +126,48 @@ describe("resolveCloudflareAccessContext", () => {
       "user-1",
       "person@autograf.ca",
     );
+  });
+
+  it("CONTRACT: an action-listed service token resolves to an action member (never read-only, never a person)", async () => {
+    mocks.env.ACCESS_READONLY_SERVICE_TOKENS = SERVICE_TOKEN;
+    mocks.env.ACCESS_ACTION_SERVICE_TOKENS = ACTION_TOKEN;
+    mocks.jwtVerify.mockResolvedValue(servicePayload(ACTION_TOKEN));
+
+    const context = await resolveCloudflareAccessContext(accessHeaders(), {
+      allowServiceToken: true,
+    });
+
+    expect(context).toEqual({
+      userId: `access-service-token:${ACTION_TOKEN}`,
+      userEmail: ACTION_TOKEN,
+      emailVerified: true,
+      organizationId: "shared-workspace",
+      role: "member",
+      actionServiceToken: true,
+    });
+    expect(context.readOnlyServiceToken).toBeUndefined();
+    expect(mocks.resolveSharedWorkspaceContext).not.toHaveBeenCalled();
+  });
+
+  it("CONTRACT: the read-only token stays read-only, even when it is also on the action list", async () => {
+    mocks.env.ACCESS_READONLY_SERVICE_TOKENS = SERVICE_TOKEN;
+    mocks.env.ACCESS_ACTION_SERVICE_TOKENS = `${ACTION_TOKEN},${SERVICE_TOKEN}`;
+    mocks.jwtVerify.mockResolvedValue(servicePayload());
+
+    const context = await resolveCloudflareAccessContext(accessHeaders(), {
+      allowServiceToken: true,
+    });
+
+    expect(context.readOnlyServiceToken).toBe(true);
+    expect(context.actionServiceToken).toBeUndefined();
+  });
+
+  it("CONTRACT: server functions and API routes reject an action token too", async () => {
+    mocks.env.ACCESS_ACTION_SERVICE_TOKENS = ACTION_TOKEN;
+    mocks.jwtVerify.mockResolvedValue(servicePayload(ACTION_TOKEN));
+
+    await expect(
+      resolveCloudflareAccessContext(accessHeaders()),
+    ).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
   });
 });

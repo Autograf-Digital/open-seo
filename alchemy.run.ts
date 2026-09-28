@@ -296,6 +296,9 @@ const dataEnv = {
   // Cloudflare Access service-token client ids admitted to /mcp with the
   // read-only tools (src/middleware/ensure-user/cloudflareAccess.ts).
   ACCESS_READONLY_SERVICE_TOKENS: optionalVar("ACCESS_READONLY_SERVICE_TOKENS"),
+  // Service-token client ids admitted to /mcp with the read tools plus the
+  // action allowlist (ACTION_TOOL_NAMES in src/server/mcp/server.ts).
+  ACCESS_ACTION_SERVICE_TOKENS: optionalVar("ACCESS_ACTION_SERVICE_TOKENS"),
 };
 
 export default Alchemy.Stack(

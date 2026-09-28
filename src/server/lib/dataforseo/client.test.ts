@@ -106,6 +106,7 @@ import {
 } from "@/server/lib/dataforseo/client";
 import { DataforseoChargedTaskError } from "@/server/lib/dataforseo/envelope";
 import { fetchBacklinksSummary } from "@/server/lib/dataforseo/backlinks";
+import { withDataforseoSpendScope } from "@/server/lib/dataforseo/spend-scope";
 
 const billingCustomer = {
   organizationId: "org_123",
@@ -155,6 +156,30 @@ describe("meterDataforseoCall with split balances", () => {
 
     expect(result).toEqual({ rank: 42 });
     expect(checkMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it("CONTRACT: in self-host mode, the open spend scope learns what DataForSEO billed, including a charged failure", async () => {
+    isHostedServerAuthModeMock.mockResolvedValue(false);
+    const client = createDataforseoClient(billingCustomer);
+    mockDataforseoResult(0.05);
+
+    const { spend } = await withDataforseoSpendScope(async () => {
+      await client.backlinks.summary(backlinksInput);
+      vi.mocked(fetchBacklinksSummary).mockRejectedValueOnce(
+        new DataforseoChargedTaskError("failed but billed", {
+          costUsd: 0.02,
+          path: ["backlinks", "summary"],
+        }),
+      );
+      await expect(
+        client.backlinks.summary(backlinksInput),
+      ).rejects.toBeInstanceOf(DataforseoChargedTaskError);
+    });
+
+    expect(spend).toEqual({ costUsd: 0.07, calls: 2 });
+    // Outside a scope nothing is recorded and nothing is billed.
+    await client.backlinks.summary(backlinksInput);
     expect(trackMock).not.toHaveBeenCalled();
   });
 

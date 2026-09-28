@@ -56,6 +56,7 @@ import {
   fetchLlmTopPages,
 } from "@/server/lib/dataforseo/ai";
 import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
+import { recordDataforseoSpend } from "@/server/lib/dataforseo/spend-scope";
 import { AppError } from "@/server/lib/errors";
 
 export { mapDataforseoPathToCreditFeature };
@@ -155,7 +156,18 @@ async function meterDataforseoCall<T>(
   const isHostedMode = await isHostedServerAuthMode();
 
   if (!isHostedMode) {
-    const result = await execute();
+    // Self-host meters no credits; the spend scope (if a caller opened one)
+    // still learns what DataForSEO billed, including a charged failure.
+    let result: DataforseoApiResponse<T>;
+    try {
+      result = await execute();
+    } catch (error) {
+      if (error instanceof DataforseoChargedTaskError) {
+        recordDataforseoSpend(error.billing);
+      }
+      throw error;
+    }
+    recordDataforseoSpend(result.billing);
     return result.data;
   }
 

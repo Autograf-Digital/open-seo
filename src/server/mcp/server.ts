@@ -80,6 +80,8 @@ import {
   runSiteAuditTool,
 } from "@/server/mcp/tools/site-audit-tools";
 import { whoamiTool } from "@/server/mcp/tools/whoami";
+import { AppError } from "@/server/lib/errors";
+import { withDataforseoSpendScope } from "@/server/lib/dataforseo/spend-scope";
 
 type ToolSchema = z.ZodType | z.ZodRawShape;
 
@@ -152,7 +154,81 @@ export const READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "get_report",
 ]);
 
-export type OpenSeoMcpServerOptions = { readOnly?: boolean };
+// What an action identity (ACCESS_ACTION_SERVICE_TOKENS) may call on top of
+// READ_ONLY_TOOL_NAMES. The caller (Autograf Command) caps and audits the
+// DataForSEO spend on its side, so this list is deliberately small:
+//  - keyword research: research_keywords, get_keyword_metrics
+//  - competitor / domain lookups: get_domain_overview,
+//    get_domain_keyword_suggestions, get_ranked_keywords, find_serp_competitors
+//  - the full backlink list, one bounded page at a time: get_backlinks_profile
+//  - rank tracking config and explicit checks: create_rank_tracker,
+//    add_rank_tracking_keywords, remove_rank_tracking_keywords,
+//    estimate_rank_tracker_cost, run_rank_tracker
+//  - site audits (Lighthouse optional): run_site_audit, get_audit_status
+// Everything else — project/context/report writes, SERP and local-SEO lookups,
+// Search Console and GA4 — stays refused.
+export const ACTION_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "research_keywords",
+  "get_keyword_metrics",
+  "get_domain_overview",
+  "get_domain_keyword_suggestions",
+  "get_ranked_keywords",
+  "find_serp_competitors",
+  "get_backlinks_profile",
+  "create_rank_tracker",
+  "add_rank_tracking_keywords",
+  "remove_rank_tracking_keywords",
+  "estimate_rank_tracker_cost",
+  "run_rank_tracker",
+  "run_site_audit",
+  "get_audit_status",
+]);
+
+// An action identity must never set up spend that runs outside its caller's
+// cap: OpenSEO's own scheduler bills scheduled trackers with no one watching.
+// Its trackers stay manual, and it cannot approve recurring scheduled cost.
+const ACTION_ARGUMENT_GUARDS: Record<string, (args: unknown) => string | null> =
+  {
+    create_rank_tracker: (args) =>
+      isRecord(args) &&
+      args.scheduleInterval !== undefined &&
+      args.scheduleInterval !== "manual"
+        ? "A service token may only create manual rank trackers; its caller schedules checks."
+        : null,
+    add_rank_tracking_keywords: (args) =>
+      isRecord(args) && args.maxEstimatedScheduledCheckCredits !== undefined
+        ? "A service token cannot approve recurring scheduled rank-check cost."
+        : null,
+  };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+// Reported on an action-token tool result as `_meta.dataforseoSpend`.
+export const DATAFORSEO_SPEND_META_KEY = "dataforseoSpend";
+
+function asActionTool<Input extends ToolSchema>(
+  tool: OpenSeoToolDefinition<Input>,
+): OpenSeoToolDefinition<Input> {
+  const guard = ACTION_ARGUMENT_GUARDS[tool.name];
+  return {
+    ...tool,
+    handler: async (args, context) => {
+      const refusal = guard?.(args);
+      if (refusal) throw new AppError("FORBIDDEN", refusal);
+      const { result, spend } = await withDataforseoSpendScope(async () =>
+        tool.handler(args, context),
+      );
+      return {
+        ...result,
+        _meta: { ...result._meta, [DATAFORSEO_SPEND_META_KEY]: spend },
+      };
+    },
+  };
+}
+
+export type OpenSeoMcpServerOptions = { readOnly?: boolean; action?: boolean };
 
 export function createOpenSeoMcpServer(
   authProps: McpProps,
@@ -188,7 +264,15 @@ export function createOpenSeoMcpServer(
   const register = <Input extends ToolSchema>(
     tool: OpenSeoToolDefinition<Input>,
   ) => {
-    if (options.readOnly && !READ_ONLY_TOOL_NAMES.has(tool.name)) return;
+    if (options.readOnly) {
+      if (!READ_ONLY_TOOL_NAMES.has(tool.name)) return;
+    } else if (options.action) {
+      if (ACTION_TOOL_NAMES.has(tool.name)) {
+        registerOpenSeoTool(server, asActionTool(tool), authProps);
+        return;
+      }
+      if (!READ_ONLY_TOOL_NAMES.has(tool.name)) return;
+    }
     registerOpenSeoTool(server, tool, authProps);
   };
 

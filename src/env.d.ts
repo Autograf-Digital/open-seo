@@ -28,6 +28,9 @@ declare namespace Cloudflare {
     // Comma-separated Cloudflare Access service-token client ids admitted to
     // /mcp with read-only tools (cloudflare_access mode only).
     ACCESS_READONLY_SERVICE_TOKENS?: string;
+    // Comma-separated Access service-token client ids admitted to /mcp with
+    // the read tools plus the action allowlist (cloudflare_access mode only).
+    ACCESS_ACTION_SERVICE_TOKENS?: string;
     POSTHOG_PUBLIC_KEY?: string;
     POSTHOG_HOST?: string;
     BETTER_AUTH_SECRET?: string;

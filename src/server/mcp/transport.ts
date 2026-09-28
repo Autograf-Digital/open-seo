@@ -257,20 +257,29 @@ export async function handleSelfHostedOpenSeoMcpRequest(
     authMode === "local_noauth"
       ? await resolveLocalNoAuthContext()
       : await resolveCloudflareAccessContext(request.headers, {
-          allowReadOnlyServiceToken: true,
+          allowServiceToken: true,
         });
+  const serviceToken =
+    identity.readOnlyServiceToken || identity.actionServiceToken;
   const props = createWorkersOAuthMcpProps({
     userId: identity.userId,
     userEmail: identity.userEmail,
     organizationId: identity.organizationId,
-    ...(identity.readOnlyServiceToken ? { role: identity.role } : {}),
+    ...(serviceToken ? { role: identity.role } : {}),
     baseUrl: getPublicOrigin(request),
     userAgent: request.headers.get("user-agent") ?? undefined,
   });
 
-  return createRequestHandler(
-    props,
-    undefined,
-    identity.readOnlyServiceToken ? { readOnly: true } : undefined,
-  )(request, env, ctx);
+  // Read-only wins if an identity somehow carries both flags.
+  const serverOptions: OpenSeoMcpServerOptions | undefined =
+    identity.readOnlyServiceToken
+      ? { readOnly: true }
+      : identity.actionServiceToken
+        ? { action: true }
+        : undefined;
+  return createRequestHandler(props, undefined, serverOptions)(
+    request,
+    env,
+    ctx,
+  );
 }

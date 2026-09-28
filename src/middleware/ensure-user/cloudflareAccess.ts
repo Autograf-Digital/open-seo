@@ -37,53 +37,59 @@ function getValidatedTeamDomain(teamDomain: string) {
   return result.origin;
 }
 
-// Access service tokens that may read the shared workspace over MCP. A service
-// token's JWT carries its client id as `common_name` and has no email, so it
-// is never a person: it gets a synthetic identity, the shared workspace, and
-// (in transport.ts) only the read tools. Comma-separated client ids, e.g.
-// "abc123.access". Unset means no service token is accepted.
+// Access service tokens admitted to MCP. A service token's JWT carries its
+// client id as `common_name` and has no email, so it is never a person: it
+// gets a synthetic identity in the shared workspace and (in transport.ts) a
+// fixed tool set. Two explicit, comma-separated lists of client ids, e.g.
+// "abc123.access"; unset means no service token is accepted:
+//   ACCESS_READONLY_SERVICE_TOKENS - only the tools reading OpenSEO's own DB.
+//   ACCESS_ACTION_SERVICE_TOKENS   - those plus the ACTION_TOOL_NAMES allowlist
+//                                    (metered research, rank tracking, audits).
+// A client id on both lists stays read-only: the narrower grant wins.
 // Cloudflare shows client ids as "<hex>.access"; compare without the suffix so
 // either spelling in the config matches the JWT's common_name.
 function normalizeServiceTokenId(value: string) {
   return value.trim().replace(/\.access$/, "");
 }
 
-function readOnlyServiceTokenIds() {
+function serviceTokenIds(list: string | undefined) {
   return new Set(
-    (env.ACCESS_READONLY_SERVICE_TOKENS ?? "")
-      .split(",")
-      .map(normalizeServiceTokenId)
-      .filter(Boolean),
+    (list ?? "").split(",").map(normalizeServiceTokenId).filter(Boolean),
   );
 }
 
-function resolveReadOnlyServiceTokenContext(
+function resolveServiceTokenContext(
   payload: JWTPayload,
 ): EnsuredUserContext | null {
   const commonName =
     typeof payload.common_name === "string" ? payload.common_name : null;
   if (!commonName || typeof payload.email === "string") return null;
-  if (!readOnlyServiceTokenIds().has(normalizeServiceTokenId(commonName))) {
-    return null;
-  }
+  const id = normalizeServiceTokenId(commonName);
+  const readOnly = serviceTokenIds(env.ACCESS_READONLY_SERVICE_TOKENS).has(id);
+  const action =
+    !readOnly && serviceTokenIds(env.ACCESS_ACTION_SERVICE_TOKENS).has(id);
+  if (!readOnly && !action) return null;
 
   return {
     userId: `access-service-token:${commonName}`,
     userEmail: commonName,
     emailVerified: true,
-    // Not ensureSharedWorkspaceOrganization(): a read-only identity must not
-    // write, and when the workspace does not exist there is nothing to read.
+    // Not ensureSharedWorkspaceOrganization(): a service identity never
+    // creates the workspace, and when it does not exist there is nothing to
+    // read or act on.
     organizationId: SHARED_WORKSPACE_ORGANIZATION_ID,
     role: "member",
-    readOnlyServiceToken: true,
+    ...(readOnly
+      ? { readOnlyServiceToken: true as const }
+      : { actionServiceToken: true as const }),
   };
 }
 
-// `allowReadOnlyServiceToken` is set only by the MCP transport. Server
-// functions and API routes keep rejecting service tokens.
+// `allowServiceToken` is set only by the MCP transport. Server functions and
+// API routes keep rejecting every service token, read-only or action.
 export async function resolveCloudflareAccessContext(
   headers: Headers,
-  options: { allowReadOnlyServiceToken?: boolean } = {},
+  options: { allowServiceToken?: boolean } = {},
 ): Promise<EnsuredUserContext> {
   const teamDomain = env.TEAM_DOMAIN
     ? getValidatedTeamDomain(env.TEAM_DOMAIN)
@@ -137,8 +143,8 @@ export async function resolveCloudflareAccessContext(
   const userEmail = typeof payload.email === "string" ? payload.email : null;
 
   if (!userId || !userEmail) {
-    const service = options.allowReadOnlyServiceToken
-      ? resolveReadOnlyServiceTokenContext(payload)
+    const service = options.allowServiceToken
+      ? resolveServiceTokenContext(payload)
       : null;
     if (service) return service;
     throw new AppError("UNAUTHENTICATED");

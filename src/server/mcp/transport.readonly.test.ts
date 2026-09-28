@@ -77,7 +77,7 @@ describe("self-hosted MCP transport for Access service tokens", () => {
     expect(response.status).toBe(200);
     expect(mocks.resolveCloudflareAccessContext).toHaveBeenCalledWith(
       expect.any(Headers),
-      { allowReadOnlyServiceToken: true },
+      { allowServiceToken: true },
     );
     expect(mocks.createOpenSeoMcpServer).toHaveBeenCalledWith(
       {
@@ -90,6 +90,37 @@ describe("self-hosted MCP transport for Access service tokens", () => {
         },
       },
       { readOnly: true },
+    );
+  });
+
+  it("CONTRACT: an action service token gets the action MCP server as a member", async () => {
+    mocks.resolveCloudflareAccessContext.mockResolvedValue({
+      userId: "access-service-token:action.access",
+      userEmail: "action.access",
+      emailVerified: true,
+      organizationId: "shared-workspace",
+      role: "member",
+      actionServiceToken: true,
+    });
+
+    await handleSelfHostedOpenSeoMcpRequest(
+      legacyToolsListRequest(),
+      "cloudflare_access",
+      {},
+      ctx,
+    );
+
+    expect(mocks.createOpenSeoMcpServer).toHaveBeenLastCalledWith(
+      {
+        [MCP_AUTH_CONTEXT_PROP]: {
+          userId: "access-service-token:action.access",
+          userEmail: "action.access",
+          organizationId: "shared-workspace",
+          role: "member",
+          baseUrl: "https://open-seo.test",
+        },
+      },
+      { action: true },
     );
   });
 
@@ -109,7 +140,7 @@ describe("self-hosted MCP transport for Access service tokens", () => {
       ctx,
     );
 
-    expect(mocks.createOpenSeoMcpServer).toHaveBeenCalledWith(
+    expect(mocks.createOpenSeoMcpServer).toHaveBeenLastCalledWith(
       expect.any(Object),
       undefined,
     );

@@ -190,7 +190,7 @@ describe("handleSelfHostedOpenSeoMcpRequest", () => {
     expect(
       selfHostedAuthMocks.resolveCloudflareAccessContext,
     ).toHaveBeenCalledWith(expect.any(Headers), {
-      allowReadOnlyServiceToken: true,
+      allowServiceToken: true,
     });
     expect(selfHostedAuthMocks.createOpenSeoMcpServer).toHaveBeenCalledWith({
       [MCP_AUTH_CONTEXT_PROP]: {
