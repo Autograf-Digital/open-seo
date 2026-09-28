@@ -68,6 +68,18 @@ describe("resolveCloudflareAccessContext", () => {
     expect(mocks.resolveSharedWorkspaceContext).not.toHaveBeenCalled();
   });
 
+  it("matches a configured client id with or without the .access suffix", async () => {
+    mocks.env.ACCESS_READONLY_SERVICE_TOKENS =
+      "efd3f67bba64d342278a0371011aa0ae";
+    mocks.jwtVerify.mockResolvedValue(servicePayload());
+
+    const context = await resolveCloudflareAccessContext(accessHeaders(), {
+      allowReadOnlyServiceToken: true,
+    });
+
+    expect(context.readOnlyServiceToken).toBe(true);
+  });
+
   it("CONTRACT: server functions and API routes still reject a listed service token", async () => {
     mocks.jwtVerify.mockResolvedValue(servicePayload());
 

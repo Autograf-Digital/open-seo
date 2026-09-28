@@ -42,11 +42,17 @@ function getValidatedTeamDomain(teamDomain: string) {
 // is never a person: it gets a synthetic identity, the shared workspace, and
 // (in transport.ts) only the read tools. Comma-separated client ids, e.g.
 // "abc123.access". Unset means no service token is accepted.
+// Cloudflare shows client ids as "<hex>.access"; compare without the suffix so
+// either spelling in the config matches the JWT's common_name.
+function normalizeServiceTokenId(value: string) {
+  return value.trim().replace(/\.access$/, "");
+}
+
 function readOnlyServiceTokenIds() {
   return new Set(
     (env.ACCESS_READONLY_SERVICE_TOKENS ?? "")
       .split(",")
-      .map((value) => value.trim())
+      .map(normalizeServiceTokenId)
       .filter(Boolean),
   );
 }
@@ -57,7 +63,9 @@ function resolveReadOnlyServiceTokenContext(
   const commonName =
     typeof payload.common_name === "string" ? payload.common_name : null;
   if (!commonName || typeof payload.email === "string") return null;
-  if (!readOnlyServiceTokenIds().has(commonName)) return null;
+  if (!readOnlyServiceTokenIds().has(normalizeServiceTokenId(commonName))) {
+    return null;
+  }
 
   return {
     userId: `access-service-token:${commonName}`,
