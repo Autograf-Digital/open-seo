@@ -9,7 +9,7 @@ concurrency:
 jobs:
   upload:
     if: github.repository != 'every-app/open-seo'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, autograf]
     env:
       POSTHOG_SOURCEMAPS: "true"
       POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST }}
