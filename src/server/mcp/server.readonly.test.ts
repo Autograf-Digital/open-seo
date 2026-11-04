@@ -40,6 +40,9 @@ describe("createOpenSeoMcpServer read-only mode", () => {
   it("CONTRACT: a read-only identity is offered exactly the stored-data read tools", () => {
     const names = registeredTools({ readOnly: true }).map((tool) => tool.name);
 
+    expect(names).toContain("get_rank_tracker");
+    expect(names).toContain("get_rank_history");
+
     expect(new Set(names)).toEqual(READ_ONLY_TOOL_NAMES);
     expect(names).toHaveLength(READ_ONLY_TOOL_NAMES.size);
     for (const paid of [

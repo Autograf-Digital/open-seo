@@ -48,6 +48,7 @@ export async function getKeywordHistory(
       device: rankSnapshots.device,
       checkedAt: rankSnapshots.checkedAt,
       position: rankSnapshots.position,
+      url: rankSnapshots.url,
     })
     .from(rankSnapshots)
     .where(

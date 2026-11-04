@@ -41,8 +41,8 @@ person's login by using a Cloudflare Access service token:
 
 That identity sees only the tools that read OpenSEO's own database and cost no
 credits: `list_projects`, `get_project_context`, `get_project_overview`,
-`list_saved_keywords`, `get_rank_tracker`, `get_audit_issues`,
-`get_audit_pages`, `list_reports` and `get_report`. It cannot write or call
+`list_saved_keywords`, `get_rank_tracker`, `get_rank_history`,
+`get_audit_issues`, `get_audit_pages`, `list_reports` and `get_report`. It cannot write or call
 DataForSEO, and the web app and API routes still reject it.
 
 ### Capped actions for a service (action service token)
