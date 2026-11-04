@@ -208,7 +208,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // Reported on an action-token tool result as `_meta.dataforseoSpend`.
-export const DATAFORSEO_SPEND_META_KEY = "dataforseoSpend";
+const DATAFORSEO_SPEND_META_KEY = "dataforseoSpend";
 
 function asActionTool<Input extends ToolSchema>(
   tool: OpenSeoToolDefinition<Input>,
