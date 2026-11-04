@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getProjectForOrganization: vi.fn(),
   getConfigById: vi.fn(),
   getKeywordsForConfig: vi.fn(),
-  getKeywordHistory: vi.fn(),
+  getKeywordHistoryForKeywords: vi.fn(),
   getConfigTrend: vi.fn(),
   createDataforseoClient: vi.fn(),
 }));
@@ -24,7 +24,7 @@ vi.mock(
     RankTrackingRepository: {
       getConfigById: mocks.getConfigById,
       getKeywordsForConfig: mocks.getKeywordsForConfig,
-      getKeywordHistory: mocks.getKeywordHistory,
+      getKeywordHistoryForKeywords: mocks.getKeywordHistoryForKeywords,
       getConfigTrend: mocks.getConfigTrend,
     },
   }),
@@ -65,24 +65,27 @@ describe("get_rank_history", () => {
       { id: kwA, keyword: "barber calgary" },
       { id: kwB, keyword: "fade haircut" },
     ]);
-    mocks.getKeywordHistory.mockImplementation(
-      async (_configId: string, keywordId: string) =>
-        keywordId === kwA
+    mocks.getKeywordHistoryForKeywords.mockImplementation(
+      async (_configId: string, keywordIds: string[]) =>
+        keywordIds.includes(kwA)
           ? [
               // Deliberately out of order: the tool must return oldest first.
               {
+                trackingKeywordId: kwA,
                 device: "mobile",
                 checkedAt: "2026-10-20 10:00:00",
                 position: 4,
                 url: "https://example.com/",
               },
               {
+                trackingKeywordId: kwA,
                 device: "desktop",
                 checkedAt: "2026-10-06 10:00:00",
                 position: null,
                 url: null,
               },
               {
+                trackingKeywordId: kwA,
                 device: "desktop",
                 checkedAt: "2026-10-13 10:00:00",
                 position: 12,
@@ -200,7 +203,11 @@ describe("get_rank_history", () => {
       parseInput({ projectId, trackerId, sinceDays: 30 }),
       toolContext,
     );
-    expect(mocks.getKeywordHistory).toHaveBeenCalledWith(trackerId, kwA, 30);
+    expect(mocks.getKeywordHistoryForKeywords).toHaveBeenCalledWith(
+      trackerId,
+      [kwA, kwB],
+      30,
+    );
     expect(mocks.getConfigTrend).toHaveBeenCalledWith(trackerId, "desktop", 30);
   });
 
@@ -212,8 +219,12 @@ describe("get_rank_history", () => {
       toolContext,
     );
 
-    expect(mocks.getKeywordHistory).toHaveBeenCalledTimes(1);
-    expect(mocks.getKeywordHistory).toHaveBeenCalledWith(trackerId, kwB, 90);
+    expect(mocks.getKeywordHistoryForKeywords).toHaveBeenCalledTimes(1);
+    expect(mocks.getKeywordHistoryForKeywords).toHaveBeenCalledWith(
+      trackerId,
+      [kwB],
+      90,
+    );
     expect(mocks.getConfigTrend).toHaveBeenCalledTimes(1);
     expect(mocks.getConfigTrend).toHaveBeenCalledWith(trackerId, "mobile", 90);
     expect(result.structuredContent).toMatchObject({
@@ -232,7 +243,7 @@ describe("get_rank_history", () => {
         toolContext,
       ),
     ).rejects.toThrow();
-    expect(mocks.getKeywordHistory).not.toHaveBeenCalled();
+    expect(mocks.getKeywordHistoryForKeywords).not.toHaveBeenCalled();
   });
 
   it("refuses a tracker outside the project (same check as get_rank_tracker)", async () => {
@@ -248,7 +259,7 @@ describe("get_rank_history", () => {
       configId: trackerId,
       projectId,
     });
-    expect(mocks.getKeywordHistory).not.toHaveBeenCalled();
+    expect(mocks.getKeywordHistoryForKeywords).not.toHaveBeenCalled();
   });
 
   it("refuses a project the caller cannot access", async () => {
@@ -276,7 +287,11 @@ describe("get_rank_history", () => {
       toolContext,
     );
 
-    expect(mocks.getKeywordHistory).toHaveBeenCalledTimes(MAX_HISTORY_KEYWORDS);
+    // One batched repository call for all capped keywords, not one per keyword.
+    expect(mocks.getKeywordHistoryForKeywords).toHaveBeenCalledTimes(1);
+    expect(mocks.getKeywordHistoryForKeywords.mock.calls[0]?.[1]).toHaveLength(
+      MAX_HISTORY_KEYWORDS,
+    );
     expect(result.structuredContent).toMatchObject({ truncated: true });
   });
 });

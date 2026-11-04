@@ -1,4 +1,4 @@
-import { sortBy } from "remeda";
+import { groupBy, sortBy } from "remeda";
 import { z } from "zod";
 import { RankTrackingRepository } from "@/server/features/rank-tracking/repositories/RankTrackingRepository";
 import { AppError } from "@/server/lib/errors";
@@ -11,9 +11,10 @@ import {
 import { withMcpProjectAuth } from "@/server/mcp/project-auth";
 import { projectIdSchema } from "@/server/mcp/schemas";
 
-// One history query per keyword: keep a single call well inside D1's
-// per-invocation query budget. Callers page larger trackers with
-// trackingKeywordIds.
+// Keyword histories are read in one batched query per 90 ids, so a call costs
+// about 6-8 D1 queries in all (auth, tracker, keywords, 2 history chunks, 1-2
+// trend), well under Workers Free's 50 per invocation. The cap bounds the
+// response size; callers page larger trackers with trackingKeywordIds.
 export const MAX_HISTORY_KEYWORDS = 100;
 
 const inputSchema = {
@@ -57,7 +58,7 @@ export const getRankHistoryTool = {
   config: {
     title: "Get rank history",
     description:
-      "Read-only stored rank history for one rank tracker: every completed check per tracked keyword over the last `sinceDays` days (default 90, max 400), oldest first, plus the per-run position distribution. `position: null` means the keyword was checked but not found within the tracker's search depth. Trend buckets are cumulative (top10 includes top3, top20 includes top10); `not_ranking` is positions past 20 or not found. Uses no credits — reads OpenSEO's database only and never runs a check.",
+      "Read-only stored rank history for one rank tracker: every completed check per currently tracked keyword (removed keywords are not returned) over the last `sinceDays` days (default 90, max 400), oldest first, plus the per-run position distribution. `position: null` means the keyword was checked but not found within the tracker's search depth. Trend buckets are cumulative (top10 includes top3, top20 includes top10); `not_ranking` is positions past 20 or not found. Uses no credits — reads OpenSEO's database only and never runs a check.",
     inputSchema,
     outputSchema: {
       config: looseObjectOutputSchema,
@@ -109,24 +110,25 @@ export const getRankHistoryTool = {
     const truncated = selected.length > MAX_HISTORY_KEYWORDS;
     selected = selected.slice(0, MAX_HISTORY_KEYWORDS);
 
-    const keywords = await Promise.all(
-      selected.map(async (k) => {
-        const rows = await RankTrackingRepository.getKeywordHistory(
-          config.id,
-          k.id,
-          sinceDays,
-        );
-        const checks = byAt(
-          rows.map((row) => ({
-            at: row.checkedAt,
-            device: row.device,
-            position: row.position ?? null,
-            url: row.url ?? null,
-          })),
-        );
-        return { keyword: k.keyword, trackingKeywordId: k.id, checks };
-      }),
-    );
+    const historyRows =
+      await RankTrackingRepository.getKeywordHistoryForKeywords(
+        config.id,
+        selected.map((k) => k.id),
+        sinceDays,
+      );
+    const rowsByKeyword = groupBy(historyRows, (row) => row.trackingKeywordId);
+    const keywords = selected.map((k) => ({
+      keyword: k.keyword,
+      trackingKeywordId: k.id,
+      checks: byAt(
+        (rowsByKeyword[k.id] ?? []).map((row) => ({
+          at: row.checkedAt,
+          device: row.device,
+          position: row.position ?? null,
+          url: row.url ?? null,
+        })),
+      ),
+    }));
 
     const trendByDevice = await Promise.all(
       devicesFor(config.devices).map(async (device) => {
