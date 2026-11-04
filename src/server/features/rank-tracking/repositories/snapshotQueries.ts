@@ -48,6 +48,7 @@ export async function getKeywordHistory(
       device: rankSnapshots.device,
       checkedAt: rankSnapshots.checkedAt,
       position: rankSnapshots.position,
+      url: rankSnapshots.url,
     })
     .from(rankSnapshots)
     .where(
@@ -58,6 +59,51 @@ export async function getKeywordHistory(
       ),
     )
     .orderBy(asc(rankSnapshots.checkedAt));
+}
+
+// D1 caps bound parameters at 100 per statement: each chunk binds its keyword
+// ids plus 3 (configId and status in the completed-runs subquery, the cutoff).
+const KEYWORD_HISTORY_CHUNK_SIZE = 90;
+
+/**
+ * getKeywordHistory for many keywords at once: one query per 90 keyword ids
+ * instead of one per keyword. Same rows (plus trackingKeywordId), oldest first,
+ * null positions kept.
+ */
+export async function getKeywordHistoryForKeywords(
+  configId: string,
+  trackingKeywordIds: string[],
+  sinceDays: number,
+) {
+  const cutoff = cutoffTimestamp(sinceDays);
+  const rows = [];
+  for (
+    let i = 0;
+    i < trackingKeywordIds.length;
+    i += KEYWORD_HISTORY_CHUNK_SIZE
+  ) {
+    const chunk = trackingKeywordIds.slice(i, i + KEYWORD_HISTORY_CHUNK_SIZE);
+    rows.push(
+      ...(await db
+        .select({
+          trackingKeywordId: rankSnapshots.trackingKeywordId,
+          device: rankSnapshots.device,
+          checkedAt: rankSnapshots.checkedAt,
+          position: rankSnapshots.position,
+          url: rankSnapshots.url,
+        })
+        .from(rankSnapshots)
+        .where(
+          and(
+            inArray(rankSnapshots.runId, completedRunIdsForConfig(configId)),
+            inArray(rankSnapshots.trackingKeywordId, chunk),
+            gte(rankSnapshots.checkedAt, cutoff),
+          ),
+        )
+        .orderBy(asc(rankSnapshots.checkedAt))),
+    );
+  }
+  return rows;
 }
 
 /**

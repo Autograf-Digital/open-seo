@@ -14,7 +14,7 @@ import type { DataforseoApiCallCost } from "@/server/lib/dataforseo/envelope";
  * workflows) runs outside the request, so it is never in a scope: the caller
  * must account for it from its own estimate.
  */
-export type DataforseoSpend = { costUsd: number; calls: number };
+type DataforseoSpend = { costUsd: number; calls: number };
 
 const spendStore = new AsyncLocalStorage<DataforseoSpend>();
 

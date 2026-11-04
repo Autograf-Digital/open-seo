@@ -18,6 +18,7 @@ import { getDomainOverviewTool } from "@/server/mcp/tools/get-domain-overview";
 import { addRankTrackingKeywordsTool } from "@/server/mcp/tools/add-rank-tracking-keywords";
 import { createRankTrackerTool } from "@/server/mcp/tools/create-rank-tracker";
 import { estimateRankTrackerCostTool } from "@/server/mcp/tools/estimate-rank-tracker-cost";
+import { getRankHistoryTool } from "@/server/mcp/tools/get-rank-history";
 import { getRankTrackerTool } from "@/server/mcp/tools/get-rank-tracker";
 import { removeRankTrackingKeywordsTool } from "@/server/mcp/tools/remove-rank-tracking-keywords";
 import { runRankTrackerTool } from "@/server/mcp/tools/run-rank-tracker";
@@ -148,6 +149,7 @@ export const READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "get_project_overview",
   "list_saved_keywords",
   "get_rank_tracker",
+  "get_rank_history",
   "get_audit_issues",
   "get_audit_pages",
   "list_reports",
@@ -206,7 +208,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // Reported on an action-token tool result as `_meta.dataforseoSpend`.
-export const DATAFORSEO_SPEND_META_KEY = "dataforseoSpend";
+const DATAFORSEO_SPEND_META_KEY = "dataforseoSpend";
 
 function asActionTool<Input extends ToolSchema>(
   tool: OpenSeoToolDefinition<Input>,
@@ -293,6 +295,7 @@ export function createOpenSeoMcpServer(
   register(searchSerpLocationsTool);
   register(createRankTrackerTool);
   register(getRankTrackerTool);
+  register(getRankHistoryTool);
   register(addRankTrackingKeywordsTool);
   register(removeRankTrackingKeywordsTool);
   register(estimateRankTrackerCostTool);
